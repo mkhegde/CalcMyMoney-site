@@ -1,0 +1,882 @@
+
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PoundSterling, Calculator, TrendingDown, TrendingUp, HelpCircle, ChevronsUpDown, Settings2 } from "lucide-react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ExportActions from "../components/calculators/ExportActions";
+import FAQSection from "../components/calculators/FAQSection";
+import AnimatedNumber from "../components/general/AnimatedNumber";
+
+// Adding structured data for better rich snippets
+const salaryCalculatorJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "UK Salary Calculator 2025/26",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Web Browser",
+  "description": "Free UK salary calculator for 2025/26 tax year. Calculate take-home pay from gross salary and vice versa with accurate tax and National Insurance calculations.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "GBP"
+  }
+};
+
+const taxData = {
+  "2025-26": { // This is the new current year, based on the previous 2025-26 data
+    name: "2025/26",
+    taxBracketsEngland: [
+      { min: 0, max: 12570, rate: 0, name: "Personal Allowance" },
+      { min: 12571, max: 50270, rate: 0.20, name: "Basic Rate" },
+      { min: 50271, max: 125140, rate: 0.40, name: "Higher Rate" },
+      { min: 125141, max: Infinity, rate: 0.45, name: "Additional Rate" }
+    ],
+    taxBracketsScotland: [
+      { min: 0, max: 12570, rate: 0, name: "Personal Allowance" },
+      { min: 12571, max: 14876, rate: 0.19, name: "Starter Rate" },
+      { min: 14877, max: 26561, rate: 0.20, name: "Basic Rate" },
+      { min: 26562, max: 43662, rate: 0.21, name: "Intermediate Rate" },
+      { min: 43663, max: 75000, rate: 0.42, name: "Higher Rate" },
+      { min: 75001, max: 125140, rate: 0.45, name: "Advanced Rate" }, // Changed from "Top Rate" as per common data
+      { min: 125141, max: Infinity, rate: 0.48, name: "Top Rate" }
+    ],
+    niThresholds: [
+      { min: 0, max: 12570, rate: 0 },
+      { min: 12571, max: 50270, rate: 0.08 },
+      { min: 50271, max: Infinity, rate: 0.02 }
+    ],
+    studentLoanRates: {
+      none: { threshold: 0, rate: 0 },
+      plan1: { threshold: 24990, rate: 0.09 },
+      plan2: { threshold: 27295, rate: 0.09 },
+      plan4: { threshold: 31395, rate: 0.09 },
+      plan5: { threshold: 25000, rate: 0.09 },
+      postgraduate: { threshold: 21000, rate: 0.06 }
+    },
+    defaultTaxCode: "1257L",
+    basePersonalAllowance: 12570
+  },
+  "2024-25": { 
+    name: "2024/25",
+    taxBracketsEngland: [
+      { min: 0, max: 12570, rate: 0, name: "Personal Allowance" },
+      { min: 12571, max: 50270, rate: 0.20, name: "Basic Rate" },
+      { min: 50271, max: 125140, rate: 0.40, name: "Higher Rate" },
+      { min: 125141, max: Infinity, rate: 0.45, name: "Additional Rate" }
+    ],
+    taxBracketsScotland: [
+      { min: 0, max: 12570, rate: 0, name: "Personal Allowance" },
+      { min: 12571, max: 14732, rate: 0.19, name: "Starter Rate" },
+      { min: 14733, max: 25688, rate: 0.20, name: "Basic Rate" },
+      { min: 25689, max: 43662, rate: 0.21, name: "Intermediate Rate" },
+      { min: 43663, max: 125140, rate: 0.42, name: "Higher Rate" },
+      { min: 125141, max: Infinity, rate: 0.47, name: "Top Rate" }
+    ],
+    niThresholds: [
+      { min: 0, max: 12570, rate: 0 },
+      { min: 12571, max: 50270, rate: 0.10 }, // Note: Rate was higher for part of the year, using an average representation
+      { min: 50271, max: Infinity, rate: 0.02 }
+    ],
+    studentLoanRates: {
+      none: { threshold: 0, rate: 0 },
+      plan1: { threshold: 22015, rate: 0.09 },
+      plan2: { threshold: 27295, rate: 0.09 },
+      plan4: { threshold: 27660, rate: 0.09 },
+      plan5: { threshold: 25000, rate: 0.09 },
+      postgraduate: { threshold: 21000, rate: 0.06 }
+    },
+    defaultTaxCode: "1257L",
+    basePersonalAllowance: 12570
+  }
+};
+
+const salaryCalculatorFAQs = [
+  {
+    question: "What is the difference between gross and net salary?",
+    answer: "Gross salary is your total earnings before any deductions. Net salary (take-home pay) is what you receive after tax, National Insurance, pension contributions, and other deductions are removed."
+  },
+  {
+    question: "How is UK income tax calculated?",
+    answer: "UK income tax is calculated using a progressive system with different rates: 0% (Personal Allowance up to £12,570), 20% (Basic Rate £12,571-£50,270), 40% (Higher Rate £50,271-£125,140), and 45% (Additional Rate above £125,140). Scotland has different rates."
+  },
+  {
+    question: "What is National Insurance and how much do I pay?",
+    answer: "National Insurance funds state benefits like the NHS and state pension. For 2025/26, you pay 8% on earnings between £12,570-£50,270, then 2% on earnings above £50,270."
+  },
+  {
+    question: "Can I reduce my tax through pension contributions?",
+    answer: "Yes! Pension contributions are deducted from your gross salary before tax is calculated, reducing your taxable income. The annual allowance is typically £40,000 (or £10,000 if you're a high earner already drawing pension benefits)."
+  },
+  {
+    question: "What does my tax code mean?",
+    answer: "Your tax code tells your employer how much tax-free income you're entitled to. The standard code 1257L gives you the full £12,570 personal allowance. Different codes reflect your personal circumstances."
+  },
+  {
+    question: "Are these calculations accurate for my payslip?",
+    answer: "Our calculations use official HMRC rates and provide estimates. Your actual deductions may vary based on your specific tax code, benefits in kind, student loans, or other personal circumstances."
+  }
+];
+
+// Add color constants for charts
+const CHART_COLORS = {
+  takeHome: '#10b981', // green
+  tax: '#ef4444', // red
+  nationalInsurance: '#8b5cf6', // purple
+  pension: '#f59e0b', // amber
+  studentLoan: '#f97316', // orange
+};
+
+const calculateDeductions = (grossSalary, options, taxYearData) => {
+    const {
+        location,
+        taxCode,
+        otherAllowances,
+        pensionType,
+        pensionValue,
+        studentLoanPlan,
+        seisInvestment,
+        eisInvestment
+    } = options;
+
+    const { basePersonalAllowance, taxBracketsEngland, taxBracketsScotland, niThresholds, studentLoanRates } = taxYearData;
+
+    // 1. Calculate Personal Allowance
+    let personalAllowance = basePersonalAllowance;
+    if (taxCode && taxCode.match(/^\d+L$/)) {
+        personalAllowance = parseInt(taxCode.slice(0, -1)) * 10;
+    }
+    personalAllowance += otherAllowances;
+
+    // Personal allowance reduction for high earners
+    if (grossSalary > 100000) {
+        personalAllowance = Math.max(0, personalAllowance - (grossSalary - 100000) / 2);
+    }
+    
+    // 2. Calculate Pension
+    let pensionAmount = 0;
+    if (pensionType === "percent") {
+        pensionAmount = (grossSalary * pensionValue) / 100;
+    } else {
+        pensionAmount = pensionValue * 12; // Assuming fixed is monthly
+    }
+
+    // 3. Calculate Income Tax
+    const taxBrackets = location === 'scotland' ? taxBracketsScotland : taxBracketsEngland;
+    
+    let calculatedTax = 0;
+    let newTaxBreakdown = [];
+    let incomeSubjectToTax = Math.max(0, grossSalary - personalAllowance - pensionAmount);
+
+    for (const bracket of taxBrackets) {
+        if (incomeSubjectToTax <= 0) break;
+
+        const lowerBound = Math.max(0, bracket.min);
+        const upperBound = bracket.max === Infinity ? incomeSubjectToTax : Math.min(bracket.max, incomeSubjectToTax);
+
+        if (upperBound > lowerBound) {
+            const taxableAmountInBracket = upperBound - lowerBound;
+            const taxForBracket = taxableAmountInBracket * bracket.rate;
+            
+            if (taxForBracket > 0) {
+                calculatedTax += taxForBracket;
+                newTaxBreakdown.push({
+                    name: bracket.name,
+                    amount: taxForBracket,
+                    rate: bracket.rate * 100,
+                    taxableAmount: taxableAmountInBracket
+                });
+            }
+        }
+        // If incomeSubjectToTax extends beyond this bracket's max, move to the next bracket
+        if (bracket.max !== Infinity && incomeSubjectToTax > bracket.max) {
+             // Continue to next bracket, incomeSubjectToTax remains the same
+        } else {
+            // If incomeSubjectToTax is within or below this bracket, we're done.
+            break; 
+        }
+    }
+    let tax = calculatedTax;
+    let taxBreakdown = newTaxBreakdown;
+
+
+    // 4. SEIS/EIS Relief
+    const seisRelief = (seisInvestment || 0) * 0.5;
+    const eisRelief = (eisInvestment || 0) * 0.3;
+    const totalRelief = seisRelief + eisRelief;
+    tax = Math.max(0, tax - totalRelief);
+
+    // 5. Calculate National Insurance
+    let nationalInsurance = 0;
+    for (const threshold of niThresholds) {
+        if (grossSalary > threshold.min) {
+            const niableInThreshold = Math.min(grossSalary, threshold.max) - threshold.min;
+            if (niableInThreshold > 0) {
+              nationalInsurance += niableInThreshold * threshold.rate;
+            }
+        }
+    }
+
+    // 6. Calculate Student Loan
+    const plan = studentLoanRates[studentLoanPlan];
+    let studentLoan = 0;
+    if (grossSalary > plan.threshold) {
+      studentLoan = (grossSalary - plan.threshold) * plan.rate;
+    }
+
+    const totalDeductions = tax + nationalInsurance + studentLoan + pensionAmount;
+    const takeHome = grossSalary - totalDeductions;
+    
+    return {
+        grossAnnual: grossSalary,
+        tax: { total: tax, breakdown: taxBreakdown },
+        nationalInsurance,
+        studentLoan,
+        pension: pensionAmount,
+        totalDeductions,
+        takeHomeAnnual: takeHome,
+        personalAllowance: personalAllowance
+    };
+};
+
+// --- Net to Gross Calculator ---
+const calculateGrossFromNet = (netSalary, options, taxYearData) => {
+    let lowGuess = netSalary;
+    let highGuess = netSalary * 2.5; 
+    let guess = netSalary * 1.5;
+    let iterations = 0;
+
+    while (iterations < 50) {
+        const calculatedNet = calculateDeductions(guess, options, taxYearData).takeHomeAnnual;
+        const difference = calculatedNet - netSalary;
+
+        if (Math.abs(difference) < 0.01) {
+            return guess; // Found a close enough match
+        }
+
+        if (difference < 0) { // Our guess was too low
+            lowGuess = guess;
+        } else { // Our guess was too high
+            highGuess = guess;
+        }
+        
+        guess = (lowGuess + highGuess) / 2;
+        iterations++;
+    }
+    return guess; // Return best guess after iterations
+};
+
+
+export default function SalaryCalculator() {
+  // Common state
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [payPeriod, setPayPeriod] = useState("annually");
+  const [results, setResults] = useState(null); // Changed to null for initial no-calculation state
+  const [csvData, setCsvData] = useState(null);
+  const [activeTab, setActiveTab] = useState("grossToNet");
+  const [taxYear, setTaxYear] = useState("2025-26"); // Updated to 2025-26
+  const [hasCalculated, setHasCalculated] = useState(false); // New state to control results display
+
+  // Gross-to-Net state
+  const [grossSalary, setGrossSalary] = useState(''); // Changed to empty string
+
+  // Net-to-Gross state
+  const [netSalary, setNetSalary] = useState(''); // Changed to empty string
+
+  // Advanced options state
+  const [location, setLocation] = useState("england");
+  const [taxCode, setTaxCode] = useState(taxData["2025-26"].defaultTaxCode); // Initialize with default for 2025-26
+  const [pensionType, setPensionType] = useState("percent");
+  const [pensionValue, setPensionValue] = useState(5);
+  const [studentLoanPlan, setStudentLoanPlan] = useState("none");
+  const [seisInvestment, setSeisInvestment] = useState(''); // Changed to empty string
+  const [eisInvestment, setEisInvestment] = useState(''); // Changed to empty string
+  const [otherAllowances, setOtherAllowances] = useState(''); // Changed to empty string
+
+
+  useEffect(() => {
+    // Reset calculation when major options change
+    setHasCalculated(false);
+    setResults(null);
+    const currentTaxYearData = taxData[taxYear];
+    setTaxCode(currentTaxYearData.defaultTaxCode); // Update tax code when year changes
+  }, [taxYear, activeTab]); // Dependencies simplified to trigger reset on major changes
+
+  const handleCalculate = () => {
+    const currentTaxYearData = taxData[taxYear];
+    const options = {
+        location,
+        taxCode,
+        otherAllowances: Number(otherAllowances) || 0, // Convert string to number, default to 0
+        pensionType,
+        pensionValue: Number(pensionValue) || 0, // Convert string to number, default to 0
+        studentLoanPlan,
+        seisInvestment: Number(seisInvestment) || 0, // Convert string to number, default to 0
+        eisInvestment: Number(eisInvestment) || 0 // Convert string to number, default to 0
+    };
+    
+    let newResults = {};
+
+    if (activeTab === 'grossToNet') {
+        const annualSalary = payPeriod === 'monthly' ? (Number(grossSalary) || 0) * 12 : (Number(grossSalary) || 0);
+        newResults = calculateDeductions(annualSalary, options, currentTaxYearData);
+    } else { // netToGross
+        const annualNet = payPeriod === 'monthly' ? (Number(netSalary) || 0) * 12 : (Number(netSalary) || 0);
+        const calculatedGross = calculateGrossFromNet(annualNet, options, currentTaxYearData);
+        newResults = calculateDeductions(calculatedGross, options, currentTaxYearData);
+    }
+    
+    setResults(newResults);
+    setHasCalculated(true); // Set to true after calculation
+
+    // Prepare CSV Data
+    if (newResults.grossAnnual !== undefined) {
+        const csvExportData = [
+          ["Description", "Annual", "Monthly", "Weekly"],
+          ["Gross Salary", newResults.grossAnnual.toFixed(2), (newResults.grossAnnual / 12).toFixed(2), (newResults.grossAnnual / 52).toFixed(2)],
+          ["Personal Allowance", newResults.personalAllowance.toFixed(2), "", ""],
+          ["Income Tax", (-newResults.tax.total).toFixed(2), (-newResults.tax.total / 12).toFixed(2), (-newResults.tax.total / 52).toFixed(2)],
+          ["National Insurance", (-newResults.nationalInsurance).toFixed(2), (-newResults.nationalInsurance / 12).toFixed(2), (-newResults.nationalInsurance / 52).toFixed(2)],
+          ["Pension Contribution", (-newResults.pension).toFixed(2), (-newResults.pension / 12).toFixed(2), (-newResults.pension / 52).toFixed(2)],
+          ["Student Loan", (-newResults.studentLoan).toFixed(2), (-newResults.studentLoan / 12).toFixed(2), (-newResults.studentLoan / 52).toFixed(2)],
+          ["Total Deductions", (-newResults.totalDeductions).toFixed(2), (-newResults.totalDeductions / 12).toFixed(2), (-newResults.totalDeductions / 52).toFixed(2)],
+          ["Net Take-Home Pay", newResults.takeHomeAnnual.toFixed(2), (newResults.takeHomeAnnual / 12).toFixed(2), (newResults.takeHomeAnnual / 52).toFixed(2)],
+        ];
+        setCsvData(csvExportData);
+    }
+  };
+
+  const prepareChartData = () => {
+    if (!results) return { pieData: [], barData: [] };
+
+    const pieData = [
+      { name: 'Take Home Pay', value: results.takeHomeAnnual, color: CHART_COLORS.takeHome },
+      { name: 'Income Tax', value: results.tax.total, color: CHART_COLORS.tax },
+      { name: 'National Insurance', value: results.nationalInsurance, color: CHART_COLORS.nationalInsurance },
+    ];
+
+    if (results.pension > 0) {
+      pieData.push({ name: 'Pension', value: results.pension, color: CHART_COLORS.pension });
+    }
+    if (results.studentLoan > 0) {
+      pieData.push({ name: 'Student Loan', value: results.studentLoan, color: CHART_COLORS.studentLoan });
+    }
+
+    const barData = [
+      {
+        period: 'Annual',
+        'Take Home': results.takeHomeAnnual,
+        'Tax': results.tax.total,
+        'National Insurance': results.nationalInsurance,
+        'Pension': results.pension,
+        'Student Loan': results.studentLoan
+      },
+      {
+        period: 'Monthly',
+        'Take Home': results.takeHomeAnnual / 12,
+        'Tax': results.tax.total / 12,
+        'National Insurance': results.nationalInsurance / 12,
+        'Pension': results.pension / 12,
+        'Student Loan': results.studentLoan / 12
+      },
+      {
+        period: 'Weekly',
+        'Take Home': results.takeHomeAnnual / 52,
+        'Tax': results.tax.total / 52,
+        'National Insurance': results.nationalInsurance / 52,
+        'Pension': results.pension / 52,
+        'Student Loan': results.studentLoan / 52
+      }
+    ];
+
+    return { pieData, barData };
+  };
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white dark:bg-gray-800 p-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg">
+          <p className="font-medium text-gray-900 dark:text-gray-100">{`${label}`}</p>
+          {payload.map((entry, index) => (
+            <p key={index} style={{ color: entry.color }}>
+              {`${entry.name}: £${entry.value.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const PieTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white dark:bg-gray-800 p-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg">
+          <p className="font-medium text-gray-900 dark:text-gray-100">{data.name}</p>
+          <p style={{ color: data.color }}>
+            £{data.value.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {((data.value / results.grossAnnual) * 100).toFixed(1)}% of gross salary
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom label component for Pie Chart to ensure visibility in both modes
+  const renderCustomizedLabel = ({ cx, cy, midAngle, outerRadius, percent, name }) => {
+    const RADIAN = Math.PI / 180;
+    const radius = outerRadius + 20; // Distance of the label from the center
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="currentColor" // Use currentColor to pick up CSS text color
+        textAnchor={x > cx ? 'start' : 'end'}
+        dominantBaseline="central"
+        className="text-xs text-gray-800 dark:text-gray-200" // Tailwind classes for text color and size
+      >
+        {`${name} ${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+
+  const AdvancedOptions = () => (
+    <div className="space-y-6 mt-6 p-6 bg-gray-50 dark:bg-gray-800/50 rounded-lg border dark:border-gray-700">
+      <div className="space-y-2">
+        <Label className="text-gray-900 dark:text-gray-100">Tax Year</Label>
+        <Select value={taxYear} onValueChange={setTaxYear}>
+          <SelectTrigger className="dark:text-gray-50"><SelectValue /></SelectTrigger>
+          <SelectContent className="dark:bg-gray-800 dark:text-gray-50 dark:border-gray-700">
+            <SelectItem value="2025-26">2025/26</SelectItem> {/* Updated value */}
+            <SelectItem value="2024-25">2024/25</SelectItem> {/* Updated value */}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">I live in</Label>
+          <Select value={location} onValueChange={setLocation}>
+              <SelectTrigger className="dark:text-gray-50"><SelectValue /></SelectTrigger>
+              <SelectContent className="dark:bg-gray-800 dark:text-gray-50 dark:border-gray-700">
+                  <SelectItem value="england">England, Wales or Northern Ireland</SelectItem>
+                  <SelectItem value="scotland">Scotland</SelectItem>
+              </SelectContent>
+          </Select>
+      </div>
+      <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">My Tax Code</Label>
+          <Input value={taxCode} onChange={e => setTaxCode(e.target.value)} className="dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" />
+          <p className="text-xs text-gray-500 dark:text-gray-400">Default for {taxData[taxYear].name} is {taxData[taxYear].defaultTaxCode}</p>
+      </div>
+
+      <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">Pension Contribution</Label>
+          <div className="flex gap-2">
+              <Input type="number" value={pensionValue} onChange={e => setPensionValue(Number(e.target.value))} className="w-full dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" />
+              <Select value={pensionType} onValueChange={setPensionType}>
+                  <SelectTrigger className="w-[180px] dark:text-gray-50"><SelectValue /></SelectTrigger>
+                  <SelectContent className="dark:bg-gray-800 dark:text-gray-50 dark:border-gray-700">
+                      <SelectItem value="percent">%</SelectItem>
+                      <SelectItem value="fixed">Fixed PM</SelectItem>
+                  </SelectContent>
+              </Select>
+          </div>
+      </div>
+      <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">Student Loan Plan</Label>
+          <Select value={studentLoanPlan} onValueChange={setStudentLoanPlan}>
+              <SelectTrigger className="dark:text-gray-50"><SelectValue /></SelectTrigger>
+              <SelectContent className="dark:bg-gray-800 dark:text-gray-50 dark:border-gray-700">
+                  <SelectItem value="none">No Student Loan</SelectItem>
+                  <SelectItem value="plan1">Plan 1</SelectItem>
+                  <SelectItem value="plan2">Plan 2</SelectItem>
+                  <SelectItem value="plan4">Plan 4 (Scotland)</SelectItem>
+                  <SelectItem value="plan5">Plan 5</SelectItem>
+                  <SelectItem value="postgraduate">Postgraduate Loan</SelectItem>
+              </SelectContent>
+          </Select>
+      </div>
+      
+       <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">SEIS/EIS Investment (Annual)</Label>
+          <div className="flex gap-4">
+               <div className="relative flex-1">
+                  <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <Input type="number" placeholder="e.g. 1000" value={seisInvestment} onChange={e => setSeisInvestment(e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" />
+              </div>
+               <div className="relative flex-1">
+                  <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <Input type="number" placeholder="e.g. 1000" value={eisInvestment} onChange={e => setEisInvestment(e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" />
+              </div>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Tax relief of 50% (SEIS) and 30% (EIS) will be applied.</p>
+      </div>
+      <div className="space-y-2">
+          <Label className="text-gray-900 dark:text-gray-100">Other Tax-Free Allowances (Annual)</Label>
+           <div className="relative">
+              <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <Input type="number" value={otherAllowances} onChange={e => setOtherAllowances(e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" placeholder="e.g. 1260" />
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">e.g. Marriage or Blind Person's Allowance.</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* JSON-LD structured data */}
+      <script type="application/ld+json">
+        {JSON.stringify(salaryCalculatorJsonLd)}
+      </script>
+      
+      <div className="bg-white dark:bg-gray-900">
+        {/* Page Header - Optimized for SEO */}
+        <div className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 non-printable">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="text-center">
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+                UK Salary Calculator 2025/26 | Free Tax Calculator
+              </h1>
+              <p className="text-lg text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+                Calculate your UK take-home pay for the 2025/26 tax year. Free salary calculator with accurate income tax, National Insurance, and pension contributions. Works for England, Wales, Scotland & Northern Ireland.
+              </p>
+              {/* Additional keyword-rich content */}
+              <div className="mt-6 text-sm text-gray-500 dark:text-gray-400 max-w-4xl mx-auto">
+                <p>Supports gross-to-net and net-to-gross calculations • Updated for 2025/26 tax rates • Includes student loan repayments • Scottish income tax rates supported</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Calculator Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="print-title hidden">UK Salary Calculator Results</div>
+
+          <div className="grid lg:grid-cols-5 gap-8 printable-grid-cols-1">
+            {/* Input Panel */}
+            <div className="lg:col-span-2 non-printable">
+              <Card className="sticky top-24 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                  <CardHeader>
+                      <TabsList className="grid w-full grid-cols-2 bg-gray-100 dark:bg-gray-700">
+                          <TabsTrigger value="grossToNet" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 dark:text-gray-50">Gross to Net</TabsTrigger>
+                          <TabsTrigger value="netToGross" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 dark:text-gray-50">Net to Gross</TabsTrigger>
+                      </TabsList>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <TabsContent value="grossToNet" className="space-y-6 mt-0">
+                        <div className="space-y-2">
+                          <Label htmlFor="grossSalary" className="text-gray-900 dark:text-gray-100">Your Gross Salary</Label>
+                          <div className="relative">
+                            <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                            <Input id="grossSalary" type="number" value={grossSalary} onChange={(e) => setGrossSalary(e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" placeholder="e.g. 50000" />
+                          </div>
+                        </div>
+                    </TabsContent>
+                    <TabsContent value="netToGross" className="space-y-6 mt-0">
+                        <div className="space-y-2">
+                          <Label htmlFor="netSalary" className="text-gray-900 dark:text-gray-100">Your Desired Take-Home</Label>
+                          <div className="relative">
+                            <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                            <Input id="netSalary" type="number" value={netSalary} onChange={(e) => setNetSalary(e.target.value)} className="pl-10 dark:bg-gray-700 dark:text-gray-50 dark:border-gray-600" placeholder="e.g. 35000" />
+                          </div>
+                        </div>
+                    </TabsContent>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="payPeriod" className="text-gray-900 dark:text-gray-100">Pay Period</Label>
+                      <Select value={payPeriod} onValueChange={setPayPeriod}>
+                        <SelectTrigger className="dark:text-gray-50"><SelectValue /></SelectTrigger>
+                        <SelectContent className="dark:bg-gray-800 dark:text-gray-50 dark:border-gray-700">
+                          <SelectItem value="annually">Annually</SelectItem>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button variant="outline" onClick={() => setShowAdvanced(!showAdvanced)} className="w-full">
+                        <Settings2 className={`w-4 h-4 mr-2 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
+                        {showAdvanced ? 'Hide' : 'Show'} Advanced Options
+                    </Button>
+
+                    {showAdvanced && <AdvancedOptions />}
+
+                    <Button onClick={handleCalculate} className="w-full text-lg">
+                      <Calculator className="w-5 h-5 mr-2" />
+                      Calculate
+                    </Button>
+                  </CardContent>
+                </Tabs>
+              </Card>
+            </div>
+
+            {/* Results Panel */}
+            <div className="lg:col-span-3 space-y-6 printable-area">
+              {hasCalculated && results ? ( // Conditional rendering for results
+                <>
+                  <div className="flex justify-between items-center non-printable">
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Your Results for {taxData[taxYear].name}</h2>
+                    <ExportActions csvData={csvData} fileName={`salary-calculation-${taxYear}`} title={`Salary Calculation ${taxData[taxYear].name}`} />
+                  </div>
+                  {/* Summary Cards */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/50 dark:to-green-800/50 border-green-200 dark:border-green-700">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-green-800 dark:text-green-300">Annual Take-Home</p>
+                            <div className="text-3xl font-bold text-green-900 dark:text-green-100">
+                              £<AnimatedNumber value={results.takeHomeAnnual} />
+                            </div>
+                          </div>
+                          <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                            <TrendingUp className="w-6 h-6 text-white" />
+                          </div>
+                        </div>
+                        <p className="text-sm text-green-700 dark:text-green-300 mt-2">
+                          £{(results.takeHomeAnnual / 12)?.toLocaleString('en-GB', { maximumFractionDigits: 0 })} per month
+                        </p>
+                      </CardContent>
+                    </Card>
+      
+                    <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/50 dark:to-red-800/50 border-red-200 dark:border-red-700">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-red-800 dark:text-red-300">Total Deductions</p>
+                            <div className="text-3xl font-bold text-red-900 dark:text-red-100">
+                              £<AnimatedNumber value={results.totalDeductions} />
+                            </div>
+                          </div>
+                          <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center">
+                            <TrendingDown className="w-6 h-6 text-white" />
+                          </div>
+                        </div>
+                        <p className="text-sm text-red-700 dark:text-red-300 mt-2">
+                          {results.grossAnnual > 0 ? ((results.totalDeductions / results.grossAnnual) * 100).toFixed(1) : 0}% effective rate
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+      
+                  {/* NEW: Visual Charts Section */}
+                  <div className="grid md:grid-cols-2 gap-6 non-printable">
+                    {/* Pie Chart - Salary Breakdown */}
+                    <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100">
+                      <CardHeader>
+                        <CardTitle>Salary Breakdown</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <PieChart>
+                            <Pie
+                              data={prepareChartData().pieData}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={renderCustomizedLabel} // Use the custom label component
+                              outerRadius={80}
+                              dataKey="value"
+                            >
+                              {prepareChartData().pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<PieTooltip />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+
+                    {/* Bar Chart - Period Comparison */}
+                    <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100">
+                      <CardHeader>
+                        <CardTitle>Payment Periods</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={prepareChartData().barData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" /> {/* Use CSS variable for border color */}
+                            <XAxis dataKey="period" tick={{ fill: 'currentColor' }} />
+                            <YAxis 
+                              tickFormatter={(value) => `£${(value / 1000).toFixed(0)}k`}
+                              tick={{ fill: 'currentColor' }}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend className="text-gray-600 dark:text-gray-300" /> {/* Apply text color to legend */}
+                            <Bar dataKey="Take Home" stackId="a" fill={CHART_COLORS.takeHome} />
+                            <Bar dataKey="Tax" stackId="a" fill={CHART_COLORS.tax} />
+                            <Bar dataKey="National Insurance" stackId="a" fill={CHART_COLORS.nationalInsurance} />
+                            <Bar dataKey="Pension" stackId="a" fill={CHART_COLORS.pension} />
+                            <Bar dataKey="Student Loan" stackId="a" fill={CHART_COLORS.studentLoan} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </div>
+      
+                  {/* Detailed Breakdown */}
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader>
+                      <CardTitle>Detailed Breakdown</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">Gross Annual Salary</span>
+                          <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
+                            £{results.grossAnnual?.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center p-3">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">Personal Allowance</span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                            £{results.personalAllowance?.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+
+                        {results.tax?.breakdown?.map((bracket, index) => (
+                          <div key={index} className="flex justify-between items-center p-3 border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-r-lg">
+                            <div>
+                              <span className="font-medium text-gray-900 dark:text-gray-100">{bracket.name} ({bracket.rate}%)</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">
+                                On £{bracket.taxableAmount.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                              </p>
+                            </div>
+                            <span className="font-semibold text-blue-800 dark:text-blue-300">
+                              -£{bracket.amount.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        ))}
+
+                        {results.nationalInsurance > 0 && (
+                          <div className="flex justify-between items-center p-3 border-l-4 border-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-r-lg">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">National Insurance</span>
+                            <span className="font-semibold text-purple-800 dark:text-purple-300">
+                              -£{results.nationalInsurance.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
+
+                        {results.pension > 0 && (
+                          <div className="flex justify-between items-center p-3 border-l-4 border-green-400 bg-green-50 dark:bg-green-900/20 rounded-r-lg">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">Pension Contribution ({pensionValue}{pensionType === 'percent' ? '%' : ' Fixed PM'})</span>
+                            <span className="font-semibold text-green-800 dark:text-green-300">
+                              -£{results.pension.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
+
+                        {results.studentLoan > 0 && (
+                          <div className="flex justify-between items-center p-3 border-l-4 border-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-r-lg">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">Student Loan ({studentLoanPlan.replace('plan', 'Plan ')})</span>
+                            <span className="font-semibold text-orange-800 dark:text-orange-300">
+                              -£{results.studentLoan.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center p-4 bg-green-100 dark:bg-green-800/50 rounded-lg border-2 border-green-300 dark:border-green-700">
+                          <span className="font-bold text-lg text-green-800 dark:text-green-200">Net Annual Take-Home</span>
+                          <span className="font-bold text-xl text-green-800 dark:text-green-200">
+                            £{results.takeHomeAnnual?.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-4 mt-6 pt-6 border-t dark:border-gray-700">
+                          <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                            <p className="text-sm text-blue-800 dark:text-blue-300 font-medium">Monthly Take-Home</p>
+                            <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                              £{(results.takeHomeAnnual / 12)?.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                          <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
+                            <p className="text-sm text-purple-800 dark:text-purple-300 font-medium">Weekly Take-Home</p>
+                            <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                              £{(results.takeHomeAnnual / 52)?.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+      
+                  {/* Disclaimer */}
+                  <Card className="bg-amber-50 dark:bg-yellow-900/30 border-amber-200 dark:border-yellow-700">
+                    <CardContent className="p-4 flex items-start gap-3">
+                      <HelpCircle className="w-5 h-5 text-amber-700 dark:text-yellow-400 mt-0.5" />
+                      <p className="text-sm text-amber-800 dark:text-yellow-300">
+                        <strong>Disclaimer:</strong> This calculator provides estimates based on UK tax rates for the selected tax year. 
+                        Results are for guidance only and should not be considered as professional financial advice. 
+                        Actual deductions may vary based on individual circumstances.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : ( // Placeholder when no calculation has been made
+                <Card className="lg:col-span-3 flex items-center justify-center h-[400px] bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                  <div className="text-center text-gray-500 dark:text-gray-400">
+                    <Calculator className="w-12 h-12 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold">Ready for your results?</h3>
+                    <p>Fill in your details and click "Calculate" to see your salary breakdown.</p>
+                  </div>
+                </Card>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* FAQ Section */}
+        <div className="bg-gray-50 dark:bg-gray-800/50 py-12 non-printable">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <FAQSection faqs={salaryCalculatorFAQs} />
+          </div>
+        </div>
+
+        {/* Additional content section for keywords */}
+        <div className="bg-gray-50 dark:bg-gray-800/50 py-12 non-printable">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">UK Salary Calculator - Everything You Need to Know</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-8 text-sm text-gray-700 dark:text-gray-300">
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">How Our UK Tax Calculator Works</h3>
+                <ul className="space-y-2">
+                  <li>• Accurate 2025/26 UK tax rates and thresholds</li>
+                  <li>• Income tax calculation for all UK regions</li>
+                  <li>• National Insurance contributions (Classes 1 & 4)</li>
+                  <li>• Student loan repayment calculations (Plans 1-5)</li>
+                  <li>• Pension contribution tax relief</li>
+                  <li>• Scottish income tax rates included</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Perfect for UK Employees & Contractors</h3>
+                <ul className="space-y-2">
+                  <li>• PAYE employees and contractors</li>
+                  <li>• Job offer salary comparisons</li>
+                  <li>• Annual and monthly salary planning</li>
+                  <li>• Gross to net pay calculations</li>
+                  <li>• Net to gross salary requirements</li>
+                  <li>• Tax code adjustments supported</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
